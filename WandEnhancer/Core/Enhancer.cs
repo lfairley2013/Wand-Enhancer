@@ -7,6 +7,7 @@ using AsarSharp;
 using WandEnhancer.Core.Patching.Content;
 using WandEnhancer.Core.Patching.Shared;
 using WandEnhancer.Core.Patching.Strategies;
+using WandEnhancer.Core.Patching.Strategies.Static;
 using WandEnhancer.Models;
 using WandEnhancer.Utils;
 
@@ -144,6 +145,7 @@ namespace WandEnhancer.Core
             }
 
             // Start from a pristine executable to not inherit a broken signature from prior static patches.
+            AsarIntegrityResourcePatch.Restore(_weModConfig.ExecutablePath, _asarPath, _logger);
             DiskFusePatch.Remove(_weModConfig.ExecutablePath, _logger);
 
             // Never leave a patched archive behind without its launcher.
@@ -289,6 +291,7 @@ namespace WandEnhancer.Core
 
                 // Undo on-disk fuse and launcher deployment to prevent a tampered unlaunchable Wand.
                 LauncherDeployment.Restore(_weModConfig);
+                AsarIntegrityResourcePatch.Restore(_weModConfig.ExecutablePath, _asarPath, _logger);
                 DiskFusePatch.Remove(_weModConfig.ExecutablePath, _logger);
 
                 _logger("[ENHANCER] Patch failed - the original Wand files were restored.", ELogType.Warn);
@@ -326,6 +329,7 @@ namespace WandEnhancer.Core
 
             // Undo all footprints at once: launcher stub and on-disk fuse.
             LauncherDeployment.Restore(_weModConfig);
+            AsarIntegrityResourcePatch.Restore(_weModConfig.ExecutablePath, _asarPath, _logger);
             DiskFusePatch.Remove(_weModConfig.ExecutablePath, _logger);
 
             string squirrelRoot = SquirrelRoot;
