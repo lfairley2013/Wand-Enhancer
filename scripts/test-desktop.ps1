@@ -145,13 +145,14 @@ try {
     $integrityType = $assembly.GetType('WandEnhancer.Core.Patching.Strategies.Static.AsarIntegrityResourcePatch', $true)
     $patchIntegrity = $integrityType.GetMethod('Patch')
     $modifiedHash = Write-FixtureAsar $asar '{"files":{"test":{"size":0,"offset":"0"}}}'
-    Assert-Equal ($patchIntegrity.Invoke($null, @($fixtureExe, $asar, $logger))) $true 'Patch executable integrity resource'
+    $integrityArguments = [object[]]@([string]$fixtureExe, [string]$asar, $logger)
+    Assert-Equal ($patchIntegrity.Invoke($null, $integrityArguments)) $true 'Patch executable integrity resource'
     Assert-Equal ([IO.File]::ReadAllText($fixtureExe)) ($resourcePrefix + $modifiedHash + $resourceSuffix) 'Patched executable hash'
     $rollback.Invoke($enhancer, $null) | Out-Null
     Assert-Equal ([IO.File]::ReadAllText($fixtureExe)) $originalExe 'Rollback restores original executable hash'
 
     $null = Write-FixtureAsar $asar '{"files":{"test":{"size":0,"offset":"0"}}}'
-    $patchIntegrity.Invoke($null, @($fixtureExe, $asar, $logger)) | Out-Null
+    $patchIntegrity.Invoke($null, $integrityArguments) | Out-Null
     $enhancerType.GetMethod('Restore').Invoke($enhancer, $null) | Out-Null
     Assert-Equal ([IO.File]::ReadAllText($fixtureExe)) $originalExe 'Restore preserves original executable bytes'
     Assert-Equal (Test-Path $backup) $false 'Integrity restore clears archive backup'
