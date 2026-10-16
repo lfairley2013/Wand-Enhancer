@@ -112,7 +112,50 @@ try {
     }
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $scratch 'FixtureClient.exe'))) 'original launcher' 'Restore launcher'
     Assert-Equal ($isPatched.Invoke($null, $installArgument)) $false 'Restored installation'
-    Write-Host 'Desktop regression checks passed (native sizes, backups, rollback, retry state, restore).'
+
+    # A static patch changes both the archive and its hash in the executable.
+    # Exercise the full rollback/Restore pipeline so the restored pair remains launchable.
+    function Write-FixtureAsar([string]$Path, [string]$Json) {
+        $bytes = [Text.Encoding]::UTF8.GetBytes($Json)
+        $padding = (4 - ($bytes.Length % 4)) % 4
+        $stream = [IO.File]::Create($Path)
+        $writer = [IO.BinaryWriter]::new($stream)
+        try {
+            $writer.Write([uint32]4)
+            $writer.Write([uint32](8 + $bytes.Length + $padding))
+            $writer.Write([uint32](4 + $bytes.Length + $padding))
+            $writer.Write([uint32]$bytes.Length)
+            $writer.Write($bytes)
+            $writer.Write([byte[]]::new($padding))
+        }
+        finally { $writer.Dispose() }
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { return [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+    }
+
+    $originalHash = Write-FixtureAsar $backup '{"files":{}}'
+    [IO.Directory]::CreateDirectory($unpackedBackup) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $unpackedBackup 'original.txt'), 'original unpacked')
+    $fixtureExe = Join-Path $install $config.ExecutableName
+    $resourcePrefix = 'fixture-prefix[{"file":"resources\\app.asar","alg":"SHA256","value":"'
+    $resourceSuffix = '"}]fixture-suffix'
+    $originalExe = $resourcePrefix + $originalHash + $resourceSuffix
+    [IO.File]::WriteAllText($fixtureExe, $originalExe)
+    $integrityType = $assembly.GetType('WandEnhancer.Core.Patching.Strategies.Static.AsarIntegrityResourcePatch', $true)
+    $patchIntegrity = $integrityType.GetMethod('Patch')
+    $modifiedHash = Write-FixtureAsar $asar '{"files":{"test":{"size":0,"offset":"0"}}}'
+    Assert-Equal ($patchIntegrity.Invoke($null, @($fixtureExe, $asar, $logger))) $true 'Patch executable integrity resource'
+    Assert-Equal ([IO.File]::ReadAllText($fixtureExe)) ($resourcePrefix + $modifiedHash + $resourceSuffix) 'Patched executable hash'
+    $rollback.Invoke($enhancer, $null) | Out-Null
+    Assert-Equal ([IO.File]::ReadAllText($fixtureExe)) $originalExe 'Rollback restores original executable hash'
+
+    $null = Write-FixtureAsar $asar '{"files":{"test":{"size":0,"offset":"0"}}}'
+    $patchIntegrity.Invoke($null, @($fixtureExe, $asar, $logger)) | Out-Null
+    $enhancerType.GetMethod('Restore').Invoke($enhancer, $null) | Out-Null
+    Assert-Equal ([IO.File]::ReadAllText($fixtureExe)) $originalExe 'Restore preserves original executable bytes'
+    Assert-Equal (Test-Path $backup) $false 'Integrity restore clears archive backup'
+    Write-Host 'Desktop regression checks passed (native sizes, backups, rollback, retry state, restore, executable integrity).'
 }
 finally {
     Remove-Item -LiteralPath $scratch -Recurse -Force
